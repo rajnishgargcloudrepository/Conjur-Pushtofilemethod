@@ -1,0 +1,97 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cityapp-pushtofile
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cityapp-pushtofile
+  labels:
+    app: cityapp-pushtofile
+spec:
+  ports:
+  - port: 3000
+    name: http
+  selector:
+    app: cityapp-pushtofile
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: cityapp-pushtofile
+  name: cityapp-pushtofile
+spec:
+  replicas: 1
+  selector:
+   matchLabels:
+    app: cityapp-pushtofile
+  template:
+    metadata:
+      labels:
+        app: cityapp-pushtofile
+      annotations:
+        conjur.org/authn-identity: host/conjur/authn-k8s/aks/apps/default/service_account/cityapp-pushtofile
+        conjur.org/container-mode: init
+        conjur.org/secrets-destination: file
+        conjur.org/conjur-secrets.cityapp: |
+         - admin-username: "world_db/username"
+         - admin-password: "world_db/password"
+        conjur.org/secret-file-path.cityapp: "./credentials.yaml"
+        conjur.org/secret-file-format.cityapp: "yaml"
+    spec:
+      serviceAccountName: cityapp-pushtofile
+      containers:
+      - image: nginx
+        imagePullPolicy: IfNotPresent
+        name: cityapp
+        volumeMounts:
+        - name: conjur-secrets
+          mountPath: /opt/secrets/conjur
+          readOnly: true
+  
+      initContainers:  # comment this line to troubleshoot authenticator container
+      - image:  cyberark/secrets-provider-for-k8s:latest
+        imagePullPolicy: IfNotPresent
+        name: cyberark-secrets-provider-for-k8s
+        volumeMounts:
+        - mountPath: /conjur/secrets
+          name: conjur-secrets
+        - name: podinfo
+          mountPath: /conjur/podinfo
+        env:
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          
+          - name: CONJUR_APPLIANCE_URL
+            value: "https://follower.conjur.svc.cluster.local/api"
+          
+          - name: CONJUR_AUTHN_URL
+            value: "https://follower.conjur.svc.cluster.local/api/authn-k8s/aks"
+
+          - name: CONJUR_ACCOUNT
+            value: "cyberark"
+          - name: CONJUR_SSL_CERTIFICATE
+            valueFrom:
+              configMapKeyRef:
+                name: follower-certificate
+                key: ssl-certificate
+      volumes:
+      - name: conjur-secrets
+        emptyDir:
+          medium: Memory
+      - name: podinfo
+        downwardAPI:
+            items:
+              - path: "annotations"
+                fieldRef:
+                  fieldPath: metadata.annotations

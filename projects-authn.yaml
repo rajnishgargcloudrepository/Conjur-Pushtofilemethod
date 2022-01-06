@@ -1,0 +1,26 @@
+- !policy
+  id: conjur/authn-k8s/aks/apps
+  annotations:
+     description: Identities permitted to authenticator to this cluster
+  body:
+   - !layer
+     annotations:
+       description: Layer of authenticator identities to call authn service
+   - &hosts
+     - !host
+       id: default/service_account/cityapp-summon-init
+       annotations:
+         kubernetes/authentication-container-name: authenticator
+     - !host
+       id: default/service_account/cityapp-secretless
+       annotations:
+         kubernetes/authentication-container-name: authenticator
+     - !host
+       id: default/service_account/cityapp-pushtofile
+       annotations:
+         kubernetes/authentication-container-name: cyberark-secrets-provider-for-k8s
+         kubernetes/namespace: default
+         kubernetes/service-account: cityapp-pushtofile
+   - !grant
+     role: !layer
+     members: *hosts
